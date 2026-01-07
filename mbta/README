@@ -1,0 +1,275 @@
+# Copy-Paste Deployment Commands
+
+**Just copy and run these commands in order**
+
+---
+
+## 🎯 Before You Start
+
+**Replace these placeholders with your actual values:**
+
+```bash
+# Your MongoDB connection string
+MONGODB_URI="mongodb+srv://ID:pass@cluster0.auzlobs.mongodb.net/?appName=Cluster0"
+
+# Your OpenAI API key
+OPENAI_KEY="sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# MBTA API key (can use this default)
+MBTA_KEY="XXXXXXXXXXXXXXXXXXXXXXXX"
+```
+
+---
+
+## Step 1: Deploy NANDA Registry
+
+```bash
+cd ~/Desktop/mbta
+
+bash deploy_registry_with_ui_fixed.sh "mongodb+srv://ID:PASS@cluster0.auzlobs.mongodb.net/?appName=Cluster0"
+```
+
+**SAVE THE IP ADDRESS FROM OUTPUT!**  
+Example: `23.92.17.180`
+
+---
+
+## Step 2: Whitelist IP in MongoDB
+
+**While deployment is running:**
+
+1. Open https://cloud.mongodb.com
+2. Click "Network Access" (left sidebar)
+3. Click "ADD IP ADDRESS" button
+4. Enter the IP from deployment output (e.g., `23.92.17.180`)
+5. Click "Confirm"
+6. **Wait 2 minutes**
+
+---
+
+## Step 3: Test Registry
+
+```bash
+# Replace with your IP
+curl http://23.92.17.180:6900/health
+```
+
+**Should show:**
+```json
+{"mongo": true}
+```
+
+**If false:** Wait another minute, then restart:
+```bash
+ssh -i Northeastern-registry-v2-key root@23.92.17.180 'supervisorctl restart registry'
+```
+
+---
+
+## Step 4: Deploy MBTA Agentcy
+
+**Replace the placeholders below with YOUR actual values:**
+
+```bash
+bash deploy_mbta_fixed.sh \
+  "sk-proj-YOUR-OPENAI-KEY-HERE" \
+  "MBTA KEY" \
+  "." \
+  "http://23.92.17.180:6900"
+```
+
+**SAVE THE IP ADDRESS FROM OUTPUT!**  
+Example: `172.104.25.25`
+
+---
+
+## Step 5: Test MBTA System
+
+```bash
+# Health check (replace with your IP)
+curl http://172.104.25.25:8100/
+```
+
+**Should show:**
+```json
+{
+  "mcp_available": true,
+  "stategraph_available": true,
+  "status": "healthy"
+}
+```
+
+---
+
+## Step 6: Test Full System
+
+### Test MCP Path:
+```bash
+curl -X POST http://172.104.25.25:8100/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "Red Line delays?"}'
+```
+
+### Test A2A Path:
+```bash
+curl -X POST http://172.104.25.25:8100/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "How do I get from Park Street to Harvard?"}'
+```
+
+### Test Vehicle Tracking (NEW!):
+```bash
+curl -X POST http://172.104.25.25:8100/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "Where are the Orange Line trains?"}'
+```
+
+---
+
+## Step 7: Open UIs in Browser
+
+**Registry Dashboard:**
+```
+http://23.92.17.180
+```
+
+**MBTA Frontend:**
+```
+http://172.104.25.25:3000
+```
+
+**Jaeger (Observability):**
+```
+http://172.104.25.25:16686
+```
+
+---
+
+## 🎊 Success Checklist
+
+- [ ] Registry health shows `mongo: true`
+- [ ] Registry dashboard loads
+- [ ] MBTA health shows `mcp_available: true`
+- [ ] Test query returns natural language response
+- [ ] Frontend UI loads with chat interface
+- [ ] System panel shows routing decisions
+- [ ] Both MCP and A2A paths working
+
+---
+
+## 🔧 Quick Maintenance Commands
+
+### View Logs:
+```bash
+# MBTA logs
+ssh -i mbta-agentcy-key root@172.104.25.25 'tail -f /var/log/mbta-exchange.err.log'
+
+# Registry logs
+ssh -i Northeastern-registry-v2-key root@23.92.17.180 'tail -f /var/log/registry.out.log'
+```
+
+### Restart Services:
+```bash
+# MBTA
+ssh -i mbta-agentcy-key root@172.104.25.25 'supervisorctl restart all'
+
+# Registry
+ssh -i Northeastern-registry-v2-key root@23.92.17.180 'supervisorctl restart registry'
+```
+
+### Update Code:
+```bash
+# Edit locally
+nano ~/Desktop/mbta/src/exchange_agent/exchange_server.py
+
+# Upload to server
+scp -i mbta-agentcy-key ~/Desktop/mbta/src/exchange_agent/exchange_server.py \
+    root@172.104.25.25:/opt/mbta-agentcy/src/exchange_agent/
+
+# Restart service
+ssh -i mbta-agentcy-key root@172.104.25.25 'supervisorctl restart mbta-exchange'
+```
+
+### Delete Instances:
+```bash
+# List instances
+linode-cli linodes list
+
+# Delete (WARNING: Permanent!)
+linode-cli linodes delete <INSTANCE_ID>
+```
+
+---
+
+## 🐛 Troubleshooting One-Liners
+
+### Registry mongo=false:
+```bash
+# Restart and wait
+ssh -i Northeastern-registry-v2-key root@23.92.17.180 'supervisorctl restart registry && sleep 10 && curl http://localhost:6900/health'
+```
+
+### MBTA service crashed:
+```bash
+# Check which service and logs
+ssh -i mbta-agentcy-key root@172.104.25.25 'supervisorctl status && tail -20 /var/log/mbta-exchange.err.log'
+```
+
+### Forgot instance IP:
+```bash
+linode-cli linodes list
+```
+
+### Forgot root password:
+```bash
+# Reset via Linode dashboard or redeploy
+```
+
+---
+
+## 📊 Current Deployed System (Example)
+
+**Your system after following this guide:**
+
+```
+Registry:
+  Instance: Northeastern-registry-v2-20250106-001234
+  IP: 23.92.17.180
+  Dashboard: http://23.92.17.180
+  API: http://23.92.17.180:6900
+  MongoDB: ✅ Connected
+  Cost: $24/month
+
+MBTA Agentcy:
+  Instance: 89487423
+  IP: 172.104.25.25
+  Frontend: http://172.104.25.25:3000
+  API: http://172.104.25.25:8100
+  Services: 5/5 running
+  MCP: ✅ 32 tools available
+  A2A: ✅ 3 agents running
+  Cost: $138/month
+
+Total: $162/month
+```
+
+---
+
+## 🎓 Demo URLs (Replace with yours)
+
+**Registry:**
+- http://23.92.17.180
+- http://23.92.17.180:6900/stats
+
+**MBTA:**
+- http://172.104.25.25:3000 (main demo UI!)
+- http://172.104.25.25:16686 (Jaeger traces)
+- http://172.104.25.25:3001 (Grafana)
+
+---
+
+## 🚀 That's It!
+
+**30 minutes from zero to fully deployed intelligent multi-agent system!** 🎊
+
+For detailed explanations, see `DEPLOYMENT_README.md`
